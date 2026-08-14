@@ -54,6 +54,8 @@ VIEW_LABELS = {"abs": "Absolute acres", "yoy": "YoY change"}
 METRIC_LABELS = {"Planted Acres": "Planted", "Failed Acres": "Failed",
                  "Failed %": "Failed %"}
 GEO_LABELS = {"county": "County", "asd": "Ag district"}
+# Diverging colormap for YoY change: red (decrease) -> white (0) -> green (increase)
+DIV_RWG = ["#b2182b", "#f7f7f7", "#1a9850"]
 
 # date -> (crop_year, month) for locating the prior-year comparison snapshot
 DATE_META = (df.drop_duplicates("as_of_date")
@@ -174,7 +176,9 @@ def update_map(crop, irrig, date, view, metric, geo):
     # For failed metrics, more is worse -> reverse so high/increase reads red.
     reverse = metric in ("Failed Acres", "Failed %")
     seq_scale = "YlGn_r" if reverse else "YlGn"
-    div_scale = "RdYlGn_r" if reverse else "RdYlGn"
+    # Diverging red -> white -> green so 0 is white (paired with symmetric
+    # range_color and midpoint=0 below). Reversed for "more is worse" metrics.
+    div_scale = DIV_RWG[::-1] if reverse else DIV_RWG
 
     # Geography: county (fips) or Ag Statistics District (asd_id).
     if geo == "asd" and ASD_AVAILABLE:
