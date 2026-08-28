@@ -18,7 +18,8 @@ GEOJSON_PATH = os.path.join(BASE_DIR, "counties-fips.json")
 # --- Load data once at startup ----------------------------------------------
 COLS = ["as_of_date", "crop_year", "month", "State County Code",
         "Irrigation Practice", "crop_normalized", "Planted Acres",
-        "Failed Acres", "Prevented Acres", "State", "County"]
+        "Failed Acres", "Prevented Acres", "Planted and Failed Acres",
+        "State", "County"]
 df = pd.read_csv(CSV_PATH, usecols=COLS, low_memory=False)
 df["fips"] = df["State County Code"].astype(int).map(lambda x: f"{x:05d}")
 
@@ -147,14 +148,18 @@ def _filter(sub, crop, irrig):
 def _agg(sub, loc):
     """Per-geography (county fips or ASD id) sums of raw acreage columns."""
     return sub.groupby(loc)[
-        ["Planted Acres", "Failed Acres", "Prevented Acres"]].sum()
+        ["Planted Acres", "Failed Acres", "Prevented Acres",
+         "Planted and Failed Acres"]].sum()
 
 
 def _metric_series(g, metric):
-    """Per-county value for the chosen metric (Failed % is failed/planted*100)."""
+    """Per-county value for the chosen metric.
+
+    Failed % is failed / "Planted and Failed Acres" * 100.
+    """
     if metric == "Failed %":
-        planted = g["Planted Acres"].where(g["Planted Acres"] > 0)
-        return g["Failed Acres"] / planted * 100
+        denom = g["Planted and Failed Acres"]
+        return g["Failed Acres"] / denom.where(denom > 0) * 100
     return g[metric]
 
 
