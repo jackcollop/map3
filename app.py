@@ -75,7 +75,7 @@ app.layout = html.Div(
            "margin": "0 auto", "padding": "20px"},
     children=[
         html.H1("Cotton Planted Acres by County", style={"marginBottom": "4px"}),
-        html.P("USDA FSA acreage reporting", style={"color": "#666", "marginTop": 0}),
+        html.P("USDA FSA acreage data", style={"color": "#666", "marginTop": 0}),
         html.Div(
             style={"display": "flex", "gap": "40px", "flexWrap": "wrap",
 
