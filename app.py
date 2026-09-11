@@ -51,8 +51,11 @@ DATES = sorted(df["as_of_date"].unique(), reverse=True)
 
 CROP_MAP = {"Upland": "Cotton, Upland", "Pima": "Cotton, ELS"}
 IRRIG_LABELS = {"All": "All", "I": "Irrigated", "N": "Non-irrigated"}
-VIEW_LABELS = {"abs": "Absolute acres", "yoy": "YoY change"}
-METRIC_LABELS = {"Planted Acres": "Planted", "Failed Acres": "Failed",
+VIEW_LABELS = {"abs": "Absolute acres", "yoy": "YoY change",
+               "compare": "Compare to date"}
+# "Planted" maps to the Planted and Failed Acres column (total intended acres)
+# but is still labeled simply "Planted".
+METRIC_LABELS = {"Planted and Failed Acres": "Planted", "Failed Acres": "Failed",
                  "Failed %": "Failed %"}
 GEO_LABELS = {"county": "County", "asd": "Ag district"}
 # Diverging colormap for YoY change: red (decrease) -> white (0) -> green (increase)
@@ -75,7 +78,7 @@ app.layout = html.Div(
            "margin": "0 auto", "padding": "20px"},
     children=[
         html.H1("Cotton Planted Acres by County", style={"marginBottom": "4px"}),
-        html.P("USDA FSA acreage data", style={"color": "#666", "marginTop": 0}),
+        html.P("USDA FSA acreage reporting", style={"color": "#666", "marginTop": 0}),
         html.Div(
             style={"display": "flex", "gap": "40px", "flexWrap": "wrap",
 
@@ -109,7 +112,7 @@ app.layout = html.Div(
                         id="metric",
                         options=[{"label": v, "value": k}
                                  for k, v in METRIC_LABELS.items()],
-                        value="Planted Acres", inline=True,
+                        value="Planted and Failed Acres", inline=True,
                         labelStyle={"marginRight": "16px"}),
                 ]),
                 html.Div(style=_control, children=[
@@ -120,6 +123,13 @@ app.layout = html.Div(
                                  for k, v in VIEW_LABELS.items()],
                         value="abs", inline=True,
                         labelStyle={"marginRight": "16px"}),
+                ]),
+                html.Div(style={**_control, "minWidth": "180px"}, children=[
+                    html.Label("Compare to", style=_label),
+                    dcc.Dropdown(
+                        id="compare", options=DATES,
+                        value=DATES[1] if len(DATES) > 1 else DATES[0],
+                        clearable=False),
                 ]),
                 html.Div(style=_control, children=[
                     html.Label("Geography", style=_label),
@@ -171,8 +181,9 @@ def _metric_series(g, metric):
     Input("view", "value"),
     Input("metric", "value"),
     Input("geo", "value"),
+    Input("compare", "value"),
 )
-def update_map(crop, irrig, date, view, metric, geo):
+def update_map(crop, irrig, date, view, metric, geo, compare):
     d = _filter(df[df["as_of_date"] == date], crop, irrig)
     mlabel = METRIC_LABELS[metric]
     is_pct = metric == "Failed %"
@@ -210,12 +221,12 @@ def update_map(crop, irrig, date, view, metric, geo):
             range_color=(0, top or 1),
             scope="usa",
             labels={"val": f"{mlabel}{unit if is_pct else ''}"},
-            custom_data=["name", "Planted Acres", "Failed Acres",
+            custom_data=["name", "Planted and Failed Acres", "Failed Acres",
                          "Prevented Acres", "failed_pct"],
         )
         fig.update_traces(
             hovertemplate="<b>%{customdata[0]}</b><br>"
-                          "Planted Acres: %{customdata[1]:,.0f}<br>"
+                          "Planted: %{customdata[1]:,.0f}<br>"
                           "Failed Acres: %{customdata[2]:,.0f}<br>"
                           "Prevented Acres: %{customdata[3]:,.0f}<br>"
                           "Failed %: %{customdata[4]:.1f}%<extra></extra>",
@@ -227,18 +238,29 @@ def update_map(crop, irrig, date, view, metric, geo):
         )
         return fig
 
-    # --- Year-over-year change: this snapshot vs same month, prior crop year ---
-    meta = DATE_META[date]
-    cur_year, month = meta["crop_year"], meta["month"]
-    base_year = cur_year - 1
-    base = _filter(
-        df[(df["crop_year"] == base_year) & (df["month"] == month)], crop, irrig)
+    # --- Difference view: current snapshot vs a baseline snapshot ---------
+    # yoy: same month, prior crop year.  compare: a user-chosen as-of date.
+    if view == "yoy":
+        meta = DATE_META[date]
+        cur_year, month = meta["crop_year"], meta["month"]
+        base_year = cur_year - 1
+        base = _filter(
+            df[(df["crop_year"] == base_year) & (df["month"] == month)], crop, irrig)
+        base_label, cur_label = f"{base_year} {month}", f"{cur_year} {month}"
+        title_ctx = (f"YoY change in {mlabel} by {geo_word} "
+                     f"({cur_year} vs {base_year}, {month}, as of {date})")
+        no_base_msg = f"No {base_year} {month} snapshot to compare against"
+    else:  # compare
+        base = _filter(df[df["as_of_date"] == compare], crop, irrig)
+        base_label, cur_label = compare, date
+        title_ctx = (f"Change in {mlabel} by {geo_word} "
+                     f"({date} vs {compare})")
+        no_base_msg = f"No data for baseline {compare}"
 
     if base.empty:
-        # No comparison snapshot for prior year / month
         fig = px.choropleth(scope="usa")
         fig.update_layout(
-            title=f"No {base_year} {month} snapshot to compare against",
+            title=no_base_msg,
             margin=dict(l=0, r=0, t=40, b=0),
         )
         return fig
@@ -271,13 +293,12 @@ def update_map(crop, irrig, date, view, metric, geo):
     pu = "%" if is_pct else ""
     fig.update_traces(
         hovertemplate="<b>%{customdata[0]}</b><br>"
-                      + f"{base_year} {month}: " + "%{customdata[1]:" + vfmt + "}" + pu + "<br>"
-                      + f"{cur_year} {month}: " + "%{customdata[2]:" + vfmt + "}" + pu + "<br>"
+                      + f"{base_label}: " + "%{customdata[1]:" + vfmt + "}" + pu + "<br>"
+                      + f"{cur_label}: " + "%{customdata[2]:" + vfmt + "}" + pu + "<br>"
                       + f"Change in {mlabel}: " + "%{z:" + vfmt + "}" + chg_unit + "<extra></extra>",
     )
     fig.update_layout(
-        title=f"{crop} — {IRRIG_LABELS[irrig]} — YoY change in {mlabel} "
-              f"by {geo_word} ({cur_year} vs {base_year}, {month}, as of {date})",
+        title=f"{crop} — {IRRIG_LABELS[irrig]} — {title_ctx}",
         margin=dict(l=0, r=0, t=40, b=0),
     )
     return fig
