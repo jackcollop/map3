@@ -208,6 +208,21 @@ def update_map(crop, irrig, date, view, metric, geo, compare):
         g = _agg(d, loc)
         g["val"] = _metric_series(g, metric)
         g["failed_pct"] = _metric_series(g, "Failed %")
+        # When "All" practices are shown, break the metric into I / N for hover.
+        cdata = ["name", "Planted and Failed Acres", "Failed Acres",
+                 "Prevented Acres", "failed_pct"]
+        breakdown = ""
+        if irrig == "All":
+            gi = _agg(d[d["Irrigation Practice"] == "I"], loc)
+            gn = _agg(d[d["Irrigation Practice"] == "N"], loc)
+            g["val_i"] = _metric_series(gi, metric).reindex(g.index).fillna(0.0)
+            g["val_n"] = _metric_series(gn, metric).reindex(g.index).fillna(0.0)
+            cdata += ["val_i", "val_n"]
+            bfmt = ".1f" if is_pct else ",.0f"
+            bsuf = "%" if is_pct else ""
+            breakdown = (
+                f"{mlabel} (Irrigated): " + "%{customdata[5]:" + bfmt + "}" + bsuf + "<br>"
+                + f"{mlabel} (Non-irrigated): " + "%{customdata[6]:" + bfmt + "}" + bsuf + "<br>")
         ca = g.reset_index()
         ca["name"] = ca[loc].map(name_map)
 
@@ -221,12 +236,12 @@ def update_map(crop, irrig, date, view, metric, geo, compare):
             range_color=(0, top or 1),
             scope="usa",
             labels={"val": f"{mlabel}{unit if is_pct else ''}"},
-            custom_data=["name", "Planted and Failed Acres", "Failed Acres",
-                         "Prevented Acres", "failed_pct"],
+            custom_data=cdata,
         )
         fig.update_traces(
             hovertemplate="<b>%{customdata[0]}</b><br>"
-                          "Planted: %{customdata[1]:,.0f}<br>"
+                          + breakdown
+                          + "Planted: %{customdata[1]:,.0f}<br>"
                           "Failed Acres: %{customdata[2]:,.0f}<br>"
                           "Prevented Acres: %{customdata[3]:,.0f}<br>"
                           "Failed %: %{customdata[4]:.1f}%<extra></extra>",
